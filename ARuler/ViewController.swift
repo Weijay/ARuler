@@ -17,11 +17,15 @@ class ViewController: UIViewController, ARSCNViewDelegate {
     
     private var startPoint = SCNVector3Zero
     private var endPoint = SCNVector3Zero
+    private var previousPoint: SCNVector3?
+    
+    private var lineNode: LineNode?
     
     private var startMeasuring: Bool = false {
         didSet {
             if startMeasuring {
                 reset()
+                lineNode = nil
             }
         }
     }
@@ -42,9 +46,12 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         
         // Create a session configuration
         let configuration = ARWorldTrackingConfiguration()
-
+        configuration.planeDetection = .horizontal
+        
         // Run the view's session
         sceneView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        sceneView.debugOptions = [ARSCNDebugOptions.showFeaturePoints]
+
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -58,6 +65,7 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         updateLabel(0)
         startPoint = SCNVector3Zero
         endPoint = SCNVector3Zero
+        previousPoint = nil
     }
     
     // MARK: - Touches
@@ -69,10 +77,24 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         startMeasuring = false
     }
 
+    // MARK: - Draw Line on Plane
+    @IBAction func startDrawing(_ sender: CustomButton) {
+        if let startPos = sceneView.realWorldPosition(for: view.center) {
+            lineNode = LineNode(position: startPos, of: sceneView)
+        }
+    }
+    
+    func updateLine() {
+        if let currentPosition = sceneView.realWorldPosition(for: view.center) {
+            lineNode?.updateEndPoint(currentPosition)
+        }
+    }
+    
     // MARK: - ARSCNViewDelegate
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         DispatchQueue.main.async {
             self.measuringARWorld()
+            self.updateLine()
         }
     }
     
@@ -88,6 +110,8 @@ class ViewController: UIViewController, ARSCNViewDelegate {
             
             endPoint = realWorldPosition
             updateLabel(endPoint.distance(from: startPoint))
+            
+            
         }
     }
     
@@ -98,4 +122,28 @@ class ViewController: UIViewController, ARSCNViewDelegate {
         resultLabel.text = String(format: "%.2f cm / %.2f\"", cm, inch)
     }
     
+    // MARK: - Draw 3D Line
+    func draw3DLine(at currentPosition: SCNVector3) {
+        if let previousPoint = previousPoint {
+            let line = lineFrom(vector: previousPoint, toVector: currentPosition)
+            let lineNode = SCNNode(geometry: line)
+            lineNode.geometry?.firstMaterial?.diffuse.contents = UIColor.red
+            sceneView.scene.rootNode.addChildNode(lineNode)
+        }
+        previousPoint = currentPosition
+        glLineWidth(40)
+    }
+    
+    func lineFrom(vector vector1: SCNVector3, toVector vector2: SCNVector3) -> SCNGeometry {
+        
+        let indices: [Int32] = [0, 1]
+        
+        let source = SCNGeometrySource(vertices: [vector1, vector2])
+        let element = SCNGeometryElement(indices: indices, primitiveType: .line)
+        
+        return SCNGeometry(sources: [source], elements: [element])
+        
+    }
+    
 }
+
